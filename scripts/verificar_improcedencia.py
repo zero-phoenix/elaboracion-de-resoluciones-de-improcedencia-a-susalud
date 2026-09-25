@@ -14,9 +14,21 @@ Ejecuta una batería de comprobaciones que intentan falsar el documento:
 from __future__ import annotations
 
 import sys
+import io
 from pathlib import Path
 from zipfile import ZipFile
 import xml.etree.ElementTree as ET
+
+# Configurar encoding seguro para consola Windows (cp1252 / UTF-8)
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+# Añadir raíz al sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from docx import Document
 

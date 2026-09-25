@@ -1,108 +1,124 @@
 """CLI Unificado para el Sistema de Resoluciones de Improcedencia a SUSALUD.
 Comisión de Protección al Consumidor N° 1 - INDECOPI.
 
+Elaborado por: David Chávez
+Supervisado por: Loussiana Salazar
+Equipo: Seguros
+
 Uso:
-  python scripts/improcedencia.py construir-muestra
-  python scripts/improcedencia.py verificar <archivo.docx>
-  python scripts/improcedencia.py guardia <archivo.docx>
-  python scripts/improcedencia.py entregar <archivo.docx>
+  improcedencia info
+  improcedencia normas
+  improcedencia verificar <archivo.docx> [--entidad IPRESS|IAFAS|MIXTO]
+  improcedencia guardia <archivo.docx>
+  improcedencia entregar <archivo.docx>
 """
 from __future__ import annotations
 
 import argparse
 import sys
+import io
 from pathlib import Path
+
+# Configurar encoding seguro para consola Windows (cp1252 / UTF-8)
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # Añadir raíz al sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.builder import construir_resolucion_improcedencia
+from src.builder import construir_resolucion_improcedencia_calibrada
 from src.config import GENERADOS_DIR, PLANTILLAS_DIR
-from src.improcedencia_engine import (
-    CasoImprocedencia,
-    ImprocedenciaEngine,
-    TipoEntidad,
-    TipoImprocedencia,
-)
 from scripts.guardia_improcedencia import auditar_documento
 from scripts.verificar_improcedencia import ejecutar_verificacion_popperiana
 
 
-def cmd_construir_muestra(args):
-    """Genera una muestra demostrativa de improcedencia a SUSALUD."""
-    caso = CasoImprocedencia(
-        expediente="0150-2026/CC1",
-        denunciante="JUAN PÉREZ GARCÍA",
-        denunciado="CLÍNICA SAN PABLO S.A.C.",
-        tipo_entidad=TipoEntidad.IPRESS,
-        tipo_improcedencia=TipoImprocedencia.TOTAL,
-        hechos_salud=[
-            "Presunta negligencia médica en la intervención quirúrgica de apendicectomía realizada el 12 de enero de 2026.",
-            "Demora injustificada en la atención en el área de emergencia.",
-            "Falta de entrega oportuna de la copia de la historia clínica solicitada por el paciente.",
-        ],
-        numero_resolucion="RESOLUCIÓN N° 0150-2026/CC1",
-    )
+def cmd_info(args):
+    print("================================================================================")
+    print("🏛️  SISTEMA DE RESOLUCIONES DE IMPROCEDENCIA A SUSALUD (CC1 - INDECOPI)")
+    print("================================================================================")
+    print("Autor: David Chávez")
+    print("Supervisora: Loussiana Salazar")
+    print("Equipo: Seguros")
+    print("Órgano Resolutivo: Comisión de Protección al Consumidor N° 1 (Órgano Colegiado)")
+    print("Regla Fundamental: Cero firma o resolución atribuida a la Secretaría Técnica.")
+    print("Normativa Central: Decreto Legislativo N° 1158 | D.S. N° 030-2016-SA | D.S. N° 006-2026-JUS")
+    print("================================================================================")
 
-    dossier = ImprocedenciaEngine.construir_dossier_resolucion(caso)
-    ruta_salida = GENERADOS_DIR / "RESOLUCION_0150-2026_CC1_IMPROCEDENCIA_SUSALUD.docx"
 
-    print(f"Generando resolución de muestra en: {ruta_salida}")
-    # Si no hay plantilla en plantillas_maestras, buscar si existe alguna en el workspace
-    plantilla = None
-    plantillas_locales = list(PLANTILLAS_DIR.glob("*.docx"))
-    if plantillas_locales:
-        plantilla = plantillas_locales[0]
-    else:
-        # Buscar en repo anterior
-        otras = list(Path("c:/Users/Admin/Documents/antigravity/zealous-kepler").glob("**/*.docx"))
-        if otras:
-            plantilla = otras[0]
-
-    construir_resolucion_improcedencia(dossier, ruta_salida, plantilla)
-    print(f"✅ Documento generado exitosamente.")
+def cmd_normas(args):
+    print("\n📚 CATÁLOGO NORMATIVO COMPARATIVO: IAFAS vs. IPRESS vs. MIXTO\n")
+    print("1. IAFAS (Aseguradoras, EPS, Prepagadas, AFOCAT, SIS, EsSalud):")
+    print("   - Definición legal: Art. 3° num 2 y Art. 6° del Decreto Legislativo N° 1158.")
+    print("   - Ley sectorial: Ley N° 29344 (Aseguramiento Universal en Salud) y D.S. N° 008-2010-SA.")
+    print("   - Infracciones SUSALUD: Anexo I-B del D.S. N° 031-2014-SA (cobertura inoportuna, pólizas).")
+    print("   - Transferencia Indecopi-Susalud: Art. 8° D.S. N° 026-2015-SA (seguros, SOAT gastos médicos).\n")
+    print("2. IPRESS (Clínicas, Hospitales, Policlínicos, Laboratorios):")
+    print("   - Definición legal: Art. 3° num 3 y Art. 7° del Decreto Legislativo N° 1158.")
+    print("   - Ley sectorial: Ley N° 26842 (Ley General de Salud - acto médico, historia clínica).")
+    print("   - Infracciones SUSALUD: D.S. N° 031-2014-SA (conductas de IPRESS en perjuicio de usuarios).")
+    print("   - Materia: Calidad, oportunidad, seguridad asistencial, idoneidad del acto médico.\n")
+    print("3. CASOS MIXTOS (IAFAS + IPRESS):")
+    print("   - Concurrencia de cobertura y servicio médico (ej. Clínica + EPS / Aseguradora).")
+    print("   - Cita concurrente de Art. 3° num 2 y 3 del D. Leg. N° 1158 y análisis individualizado.\n")
 
 
 def cmd_verificar(args):
     ruta = Path(args.archivo)
+    if not ruta.exists():
+        print(f"Error: No existe el archivo {ruta}")
+        sys.exit(1)
     ejecutar_verificacion_popperiana(ruta, args.entidad, args.modalidad)
 
 
 def cmd_guardia(args):
     ruta = Path(args.archivo)
+    if not ruta.exists():
+        print(f"Error: No existe el archivo {ruta}")
+        sys.exit(1)
     fugas = auditar_documento(ruta)
     if fugas:
         print(f"❌ FALLO DLP: Se encontraron {len(fugas)} fugas.")
         sys.exit(1)
     else:
-        print("✅ GUARDIA DLP APROBADA: Documento limpio.")
+        print("✅ GUARDIA DLP APROBADA: Documento completamente limpio.")
 
 
 def cmd_entregar(args):
     ruta = Path(args.archivo)
+    if not ruta.exists():
+        print(f"Error: No existe el archivo {ruta}")
+        sys.exit(1)
     print(f"🚀 INICIANDO CERTIFICACIÓN DE ENTREGA: {ruta.name}")
 
-    # 1. Guardia DLP
     fugas = auditar_documento(ruta)
     if fugas:
         print("❌ Certificación abortada: Fallo en guardia DLP.")
         sys.exit(1)
 
-    # 2. Verificación Popperiana
     ok = ejecutar_verificacion_popperiana(ruta, args.entidad, args.modalidad)
     if not ok:
         print("❌ Certificación abortada: No superó la batería popperiana.")
         sys.exit(1)
 
-    print("\n🏆 CERTIFICACIÓN TRIPLE BARRERA SUPERADA: Documento listo para el Colegiado de la CC1.")
+    print("\n🏆 CERTIFICACIÓN TRIPLE BARRERA SUPERADA: Documento listo para la firma del Colegiado de la CC1.")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="CLI de Resoluciones de Improcedencia a SUSALUD")
+    parser = argparse.ArgumentParser(
+        prog="improcedencia",
+        description="Sistema de Resoluciones de Improcedencia a SUSALUD (CC1 - Indecopi)",
+    )
     subparsers = parser.add_subparsers(dest="comando", required=True)
 
-    # Subcomando muestra
-    subparsers.add_parser("construir-muestra", help="Genera una resolución de muestra")
+    # Subcomando info
+    subparsers.add_parser("info", help="Muestra información institucional y del equipo")
+
+    # Subcomando normas
+    subparsers.add_parser("normas", help="Muestra el desglose normativo IAFAS vs IPRESS vs Mixto")
 
     # Subcomando verificar
     parser_ver = subparsers.add_parser("verificar", help="Verifica un archivo .docx con la batería popperiana")
@@ -122,8 +138,10 @@ def main():
 
     args = parser.parse_args()
 
-    if args.comando == "construir-muestra":
-        cmd_construir_muestra(args)
+    if args.comando == "info":
+        cmd_info(args)
+    elif args.comando == "normas":
+        cmd_normas(args)
     elif args.comando == "verificar":
         cmd_verificar(args)
     elif args.comando == "guardia":

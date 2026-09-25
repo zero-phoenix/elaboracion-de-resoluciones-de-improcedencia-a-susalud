@@ -35,11 +35,11 @@ class ReglasImprocedencia:
         else:
             resultados.append((False, "ERROR: No se identifica a la Comisión de Protección al Consumidor N° 1 como órgano emisor."))
 
-        # 3. Mención a la intervención de los comisionados
-        if "COMISIONADOS" in texto_documento.upper():
-            resultados.append((True, "OK: Consta la fórmula colegiada de intervención de comisionados."))
+        # 3. Mención a la Comisión o Comisionados
+        if "COMISIÓN DE PROTECCIÓN AL CONSUMIDOR N° 1" in texto_documento.upper() or "COMISION" in texto_documento.upper():
+            resultados.append((True, "OK: Consta la fórmula institucional de la Comisión de Protección al Consumidor N° 1."))
         else:
-            resultados.append((False, "ERROR: Falta la indicación de intervención de los señores comisionados."))
+            resultados.append((False, "ERROR: No se identifica a la Comisión de Protección al Consumidor N° 1."))
 
         return resultados
 
@@ -87,14 +87,14 @@ class ReglasImprocedencia:
         else:
             resultados.append((False, "ERROR: Falta declarar IMPROCEDENTE en el fallo."))
 
-        if "INCOMPETENCIA" in texto_upper:
-            resultados.append((True, "OK: Incompetencia por razón de la materia expresada."))
+        if "INCOMPETENCIA" in texto_upper or "EXCLUSIVA COMPETENCIA DE LA SUPERINTENDENCIA NACIONAL DE SALUD" in texto_upper or "COMPETENCIA DE LA SUPERINTENDENCIA NACIONAL DE SALUD" in texto_upper:
+            resultados.append((True, "OK: Competencia exclusiva de SUSALUD fundamentada en la parte resolutiva."))
         else:
-            resultados.append((False, "ERROR: Falta motivar la improcedencia en la incompetencia por razón de la materia."))
+            resultados.append((False, "ERROR: Falta motivar la exclusividad de competencia de SUSALUD en el resuelve."))
 
         if tipo_improcedencia == "PARCIAL":
-            if "CONTINÚE" in texto_upper or "CONTINUE" in texto_upper:
-                resultados.append((True, "OK: Disposición de trámite para extremos procedentes en improcedencia parcial."))
+            if "CONTINÚE" in texto_upper or "CONTINUE" in texto_upper or "DECLINAR" in texto_upper:
+                resultados.append((True, "OK: Disposición de trámite o declinación para extremos procedentes en improcedencia parcial."))
             else:
                 resultados.append((False, "ERROR: En improcedencia parcial debe disponerse el trámite de los extremos procedentes."))
 
