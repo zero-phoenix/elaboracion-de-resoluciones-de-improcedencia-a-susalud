@@ -6,142 +6,195 @@ Supervisado por: Loussiana Salazar
 Equipo: Seguros
 
 Uso:
-  improcedencia info
-  improcedencia normas
-  improcedencia verificar <archivo.docx> [--entidad IPRESS|IAFAS|MIXTO]
-  improcedencia guardia <archivo.docx>
-  improcedencia entregar <archivo.docx>
+  python scripts/improcedencia.py simular
+  python scripts/improcedencia.py verificar <archivo.docx> [--entidad IAFAS|IPRESS|MIXTO]
+  python scripts/improcedencia.py guardia <archivo.docx>
+  python scripts/improcedencia.py entregar <archivo.docx> [--entidad IAFAS|IPRESS|MIXTO]
 """
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
-import io
 from pathlib import Path
-
-# Configurar encoding seguro para consola Windows (cp1252 / UTF-8)
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
 
 # Añadir raíz al sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.builder import construir_resolucion_improcedencia_calibrada
+from src.builder import construir_resolucion_desde_dossier
 from src.config import GENERADOS_DIR, PLANTILLAS_DIR
+from src.improcedencia_engine import (
+    CasoImprocedencia,
+    ImprocedenciaEngine,
+    TipoEntidad,
+    TipoImprocedencia,
+)
 from scripts.guardia_improcedencia import auditar_documento
 from scripts.verificar_improcedencia import ejecutar_verificacion_popperiana
 
 
-def cmd_info(args):
-    print("================================================================================")
-    print("🏛️  SISTEMA DE RESOLUCIONES DE IMPROCEDENCIA A SUSALUD (CC1 - INDECOPI)")
-    print("================================================================================")
-    print("Autor: David Chávez")
-    print("Supervisora: Loussiana Salazar")
-    print("Equipo: Seguros")
-    print("Órgano Resolutivo: Comisión de Protección al Consumidor N° 1 (Órgano Colegiado)")
-    print("Regla Fundamental: Cero firma o resolución atribuida a la Secretaría Técnica.")
-    print("Normativa Central: Decreto Legislativo N° 1158 | D.S. N° 030-2016-SA | D.S. N° 006-2026-JUS")
-    print("================================================================================")
+def docx_a_pdf(ruta_docx: Path, ruta_pdf: Path) -> Path:
+    """Convierte un archivo docx a pdf usando Word COM."""
+    ps_cmd = f"""
+$w = New-Object -ComObject Word.Application
+$w.Visible = $false
+try {{
+    $d = $w.Documents.Open('{ruta_docx.resolve()}')
+    $d.SaveAs([ref]'{ruta_pdf.resolve()}', [ref]17)
+    $d.Close()
+}} finally {{
+    $w.Quit()
+}}
+"""
+    subprocess.run(["powershell", "-Command", ps_cmd], check=True)
+    return ruta_pdf
 
 
-def cmd_normas(args):
-    print("\n📚 CATÁLOGO NORMATIVO COMPARATIVO: IAFAS vs. IPRESS vs. MIXTO\n")
-    print("1. IAFAS (Aseguradoras, EPS, Prepagadas, AFOCAT, SIS, EsSalud):")
-    print("   - Definición legal: Art. 3° num 2 y Art. 6° del Decreto Legislativo N° 1158.")
-    print("   - Ley sectorial: Ley N° 29344 (Aseguramiento Universal en Salud) y D.S. N° 008-2010-SA.")
-    print("   - Infracciones SUSALUD: Anexo I-B del D.S. N° 031-2014-SA (cobertura inoportuna, pólizas).")
-    print("   - Transferencia Indecopi-Susalud: Art. 8° D.S. N° 026-2015-SA (seguros, SOAT gastos médicos).\n")
-    print("2. IPRESS (Clínicas, Hospitales, Policlínicos, Laboratorios):")
-    print("   - Definición legal: Art. 3° num 3 y Art. 7° del Decreto Legislativo N° 1158.")
-    print("   - Ley sectorial: Ley N° 26842 (Ley General de Salud - acto médico, historia clínica).")
-    print("   - Infracciones SUSALUD: D.S. N° 031-2014-SA (conductas de IPRESS en perjuicio de usuarios).")
-    print("   - Materia: Calidad, oportunidad, seguridad asistencial, idoneidad del acto médico.\n")
-    print("3. CASOS MIXTOS (IAFAS + IPRESS):")
-    print("   - Concurrencia de cobertura y servicio médico (ej. Clínica + EPS / Aseguradora).")
-    print("   - Cita concurrente de Art. 3° num 2 y 3 del D. Leg. N° 1158 y análisis individualizado.\n")
+def pdf_a_imagenes(ruta_pdf: Path, carpeta_salida: Path) -> list[Path]:
+    """Convierte cada página del pdf en una imagen PNG de alta resolución."""
+    import fitz  # PyMuPDF
+
+    carpeta_salida.mkdir(parents=True, exist_ok=True)
+    doc = fitz.open(str(ruta_pdf))
+    imagenes = []
+
+    for i, pagina in enumerate(doc):
+        pix = pagina.get_pixmap(dpi=150)
+        img_path = carpeta_salida / f"pagina_{i+1:02d}.png"
+        pix.save(str(img_path))
+        imagenes.append(img_path)
+
+    return imagenes
+
+
+def cmd_simular(args):
+    """Genera una resolución de improcedencia inventada y completa, convirtiéndola a imágenes."""
+    print("==================================================")
+    print("🚀 GENERANDO SIMULACIÓN DE RESOLUCIÓN DE IMPROCEDENCIA")
+    print("==================================================")
+
+    caso = CasoImprocedencia(
+        expediente="9999-2026/CC1",
+        denunciante_nombre="CARLOS ALBERTO MENDOZA VÁSQUEZ",
+        denunciante_alias="SEÑOR MENDOZA",
+        denunciado_nombre="CLÍNICA INTERNACIONAL S.A.",
+        denunciado_alias="CLÍNICA",
+        tipo_entidad=TipoEntidad.IPRESS,
+        tipo_improcedencia=TipoImprocedencia.TOTAL,
+        vencimiento="30 de octubre de 2026",
+        fecha_emision="25 de setiembre de 2026",
+        numero_resolucion="RESOLUCIÓN FINAL N° 9999-2026/CC1",
+        fecha_denuncia="14 de agosto de 2026",
+        hechos_antecedentes=[
+            "El 10 de mayo de 2026, el señor Mendoza acudió al área de emergencia de la Clínica manifestando un intenso dolor abdominal y sintomatología febril aguda.",
+            "Fue atendido por el médico de guardia, quien le prescribió analgésicos comunes y dispuso su alta médica sin ordenar exámenes ecográficos ni de laboratorio complementarios para descartar un cuadro de apendicitis aguda.",
+            "Al persistir e intensificarse el cuadro doloroso en las horas posteriores, tuvo que ser ingresado de urgencia en otra institución prestadora de salud, donde se le diagnosticó apendicitis aguda perforada con peritonitis, debiendo ser sometido a una laparotomía de emergencia.",
+            "Posteriormente, solicitó formalmente a la Clínica la entrega íntegra y legible de su historia clínica y el reporte de atención médica de emergencia, sin haber obtenido respuesta oportuna dentro del plazo legal.",
+        ],
+        hechos_cuestionados_resumen=(
+            "no le habría brindado una atención médica diligente y adecuada durante su ingreso por emergencia el 10 de mayo de 2026, "
+            "al prescribirle únicamente analgésicos sin practicarle exámenes de descarte para apendicitis aguda, y no le habría cumplido "
+            "con entregar la copia completa de su historia clínica y hoja de atención médica"
+        ),
+        denuncio_previamente_susalud=True,
+        solicito_medida_cautelar=True,
+        medidas_correctivas_solicitadas=(
+            "(i) el reembolso total de los gastos médicos y de hospitalización asumidos para la intervención de emergencia; "
+            "(ii) una indemnización económica por el daño físico y emocional generado; y, "
+            "(iii) la entrega inmediata de la copia fedateada de la historia clínica"
+        ),
+    )
+
+    dossier = ImprocedenciaEngine.generar_dossier_desde_caso(caso)
+    ruta_docx = GENERADOS_DIR / "RESOLUCION_SIMULADA_9999-2026_CC1_IMPRO_SUSALUD.docx"
+    ruta_pdf = GENERADOS_DIR / "RESOLUCION_SIMULADA_9999-2026_CC1_IMPRO_SUSALUD.pdf"
+    carpeta_imgs = GENERADOS_DIR / "capturas_simulacion"
+
+    print(f"📄 1. Ensamblando documento Word en: {ruta_docx}")
+    construir_resolucion_desde_dossier(dossier, ruta_docx)
+
+    print("🛡️ 2. Verificando Guardia DLP...")
+    fugas = auditar_documento(ruta_docx)
+    if fugas:
+        print(f"❌ Fallo DLP: {fugas}")
+        sys.exit(1)
+    print("✅ Guardia DLP aprobada.")
+
+    print("🔬 3. Verificando con batería Popperiana...")
+    ok = ejecutar_verificacion_popperiana(ruta_docx, caso.tipo_entidad.value, caso.tipo_improcedencia.value)
+    if not ok:
+        print("❌ Fallo de verificación popperiana.")
+        sys.exit(1)
+
+    print(f"🖨️ 4. Convirtiendo a PDF vía Word COM: {ruta_pdf}")
+    docx_a_pdf(ruta_docx, ruta_pdf)
+
+    print(f"📸 5. Renders de cada página en: {carpeta_imgs}")
+    imgs = pdf_a_imagenes(ruta_pdf, carpeta_imgs)
+    print(f"✅ Se generaron {len(imgs)} páginas capturadas exitosamente:")
+    for img in imgs:
+        print(f"   - {img.name} ({img.resolve()})")
 
 
 def cmd_verificar(args):
     ruta = Path(args.archivo)
-    if not ruta.exists():
-        print(f"Error: No existe el archivo {ruta}")
-        sys.exit(1)
     ejecutar_verificacion_popperiana(ruta, args.entidad, args.modalidad)
 
 
 def cmd_guardia(args):
     ruta = Path(args.archivo)
-    if not ruta.exists():
-        print(f"Error: No existe el archivo {ruta}")
-        sys.exit(1)
     fugas = auditar_documento(ruta)
     if fugas:
         print(f"❌ FALLO DLP: Se encontraron {len(fugas)} fugas.")
         sys.exit(1)
     else:
-        print("✅ GUARDIA DLP APROBADA: Documento completamente limpio.")
+        print("✅ GUARDIA DLP APROBADA: Cero placeholders o variables sin resolver.")
 
 
 def cmd_entregar(args):
     ruta = Path(args.archivo)
-    if not ruta.exists():
-        print(f"Error: No existe el archivo {ruta}")
-        sys.exit(1)
-    print(f"🚀 INICIANDO CERTIFICACIÓN DE ENTREGA: {ruta.name}")
+    print(f"🚀 CERTIFICACIÓN DE ENTREGA: {ruta.name}")
 
     fugas = auditar_documento(ruta)
     if fugas:
-        print("❌ Certificación abortada: Fallo en guardia DLP.")
+        print("❌ Fallo en Guardia DLP.")
         sys.exit(1)
 
     ok = ejecutar_verificacion_popperiana(ruta, args.entidad, args.modalidad)
     if not ok:
-        print("❌ Certificación abortada: No superó la batería popperiana.")
+        print("❌ Fallo en verificación popperiana.")
         sys.exit(1)
 
-    print("\n🏆 CERTIFICACIÓN TRIPLE BARRERA SUPERADA: Documento listo para la firma del Colegiado de la CC1.")
+    print("🏆 DOCUMENTO CERTIFICADO Y LISTO PARA ELEVACIÓN AL COLEGIADO CC1.")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        prog="improcedencia",
-        description="Sistema de Resoluciones de Improcedencia a SUSALUD (CC1 - Indecopi)",
-    )
+    parser = argparse.ArgumentParser(description="CLI de Resoluciones de Improcedencia a SUSALUD")
     subparsers = parser.add_subparsers(dest="comando", required=True)
 
-    # Subcomando info
-    subparsers.add_parser("info", help="Muestra información institucional y del equipo")
+    # simular
+    subparsers.add_parser("simular", help="Genera una resolución de improcedencia inventada y sus capturas")
 
-    # Subcomando normas
-    subparsers.add_parser("normas", help="Muestra el desglose normativo IAFAS vs IPRESS vs Mixto")
+    # verificar
+    p_ver = subparsers.add_parser("verificar", help="Verifica un .docx")
+    p_ver.add_argument("archivo", help="Ruta al archivo .docx")
+    p_ver.add_argument("--entidad", default="IPRESS", choices=["IAFAS", "IPRESS", "MIXTO"])
+    p_ver.add_argument("--modalidad", default="TOTAL", choices=["TOTAL", "PARCIAL"])
 
-    # Subcomando verificar
-    parser_ver = subparsers.add_parser("verificar", help="Verifica un archivo .docx con la batería popperiana")
-    parser_ver.add_argument("archivo", help="Ruta al archivo .docx")
-    parser_ver.add_argument("--entidad", default="IPRESS", choices=["IAFAS", "IPRESS", "MIXTO"])
-    parser_ver.add_argument("--modalidad", default="TOTAL", choices=["TOTAL", "PARCIAL"])
+    # guardia
+    p_gua = subparsers.add_parser("guardia", help="Audita fuga DLP")
+    p_gua.add_argument("archivo", help="Ruta al archivo .docx")
 
-    # Subcomando guardia
-    parser_gua = subparsers.add_parser("guardia", help="Verifica fuga de placeholders con Guardia DLP")
-    parser_gua.add_argument("archivo", help="Ruta al archivo .docx")
-
-    # Subcomando entregar
-    parser_ent = subparsers.add_parser("entregar", help="Certifica el documento con la triple barrera")
-    parser_ent.add_argument("archivo", help="Ruta al archivo .docx")
-    parser_ent.add_argument("--entidad", default="IPRESS", choices=["IAFAS", "IPRESS", "MIXTO"])
-    parser_ent.add_argument("--modalidad", default="TOTAL", choices=["TOTAL", "PARCIAL"])
+    # entregar
+    p_ent = subparsers.add_parser("entregar", help="Certifica el documento")
+    p_ent.add_argument("archivo", help="Ruta al archivo .docx")
+    p_ent.add_argument("--entidad", default="IPRESS", choices=["IAFAS", "IPRESS", "MIXTO"])
+    p_ent.add_argument("--modalidad", default="TOTAL", choices=["TOTAL", "PARCIAL"])
 
     args = parser.parse_args()
 
-    if args.comando == "info":
-        cmd_info(args)
-    elif args.comando == "normas":
-        cmd_normas(args)
+    if args.comando == "simular":
+        cmd_simular(args)
     elif args.comando == "verificar":
         cmd_verificar(args)
     elif args.comando == "guardia":

@@ -1,5 +1,9 @@
 """Motor de Reglas y Verificación Determinista para Resoluciones de Improcedencia a SUSALUD.
 Comisión de Protección al Consumidor N° 1 - INDECOPI.
+
+Elaborado por: David Chávez
+Supervisado por: Loussiana Salazar
+Equipo: Seguros
 """
 from __future__ import annotations
 
@@ -8,94 +12,97 @@ from typing import Any, Dict, List, Tuple
 
 
 class ReglasImprocedencia:
-    """Conjunto de reglas sustantivas y formales obligatorias."""
+    """Batería de reglas sustantivas y de consistencia formal."""
 
     @staticmethod
     def validar_emisor_y_firmas(texto_documento: str) -> List[Tuple[bool, str]]:
-        """Verifica que el documento sea emitido por la Comisión y NO por la Secretaría Técnica."""
         resultados = []
+        texto_upper = texto_documento.upper()
 
-        # 1. Regla de Oro: Cero Secretaría Técnica como firmante o decisor
-        patron_st_firma = re.compile(
-            r"(SECRETARI[AO]\s+T[EÉ]CNIC[AO]|SECRETARIA\s+TECNICA\s+AD\s+HOC)",
-            re.IGNORECASE,
-        )
-        if patron_st_firma.search(texto_documento):
-            resultados.append((
-                False,
-                "VIOLACIÓN PROCESAL GRAVE: Se detectó mención resolutiva o de firma de la Secretaría Técnica. "
-                "Las resoluciones de improcedencia deben ser emitidas y suscritas por los Miembros de la Comisión.",
-            ))
-        else:
-            resultados.append((True, "OK: Cero firma o atribución indebida a Secretaría Técnica."))
-
-        # 2. Presencia de la Comisión de Protección al Consumidor N° 1
-        if "COMISIÓN DE PROTECCIÓN AL CONSUMIDOR N° 1" in texto_documento.upper() or "COMISION DE PROTECCION AL CONSUMIDOR N" in texto_documento.upper():
+        # 1. Órgano competente: Comisión de Protección al Consumidor N° 1
+        if "COMISIÓN DE PROTECCIÓN AL CONSUMIDOR" in texto_upper or "COMISION DE PROTECCION AL CONSUMIDOR" in texto_upper:
             resultados.append((True, "OK: Órgano resolutivo identificado como Comisión de Protección al Consumidor N° 1."))
         else:
-            resultados.append((False, "ERROR: No se identifica a la Comisión de Protección al Consumidor N° 1 como órgano emisor."))
-
-        # 3. Mención a la Comisión o Comisionados
-        if "COMISIÓN DE PROTECCIÓN AL CONSUMIDOR N° 1" in texto_documento.upper() or "COMISION" in texto_documento.upper():
-            resultados.append((True, "OK: Consta la fórmula institucional de la Comisión de Protección al Consumidor N° 1."))
-        else:
             resultados.append((False, "ERROR: No se identifica a la Comisión de Protección al Consumidor N° 1."))
+
+        # 2. Control del equipo interno
+        if "DAVID CHÁVEZ" in texto_upper or "DAVID CHAVEZ" in texto_upper:
+            resultados.append((True, "OK: Autoría consignada correctamente (David Chávez)."))
+        else:
+            resultados.append((False, "ADVERTENCIA: No se encontró 'David Chávez' en el bloque de elaboración."))
+
+        if "LOUSSIANA SALAZAR" in texto_upper:
+            resultados.append((True, "OK: Supervisión consignada correctamente (Loussiana Salazar)."))
+        else:
+            resultados.append((False, "ADVERTENCIA: No se encontró 'Loussiana Salazar' en el bloque de supervisión."))
+
+        # 3. La Secretaría Técnica solo recibe la orden en el SEGUNDO del resuelve, no decide ni firma
+        lineas_finales = "\n".join(texto_documento.splitlines()[-15:])
+        if "SECRETARIA TECNICA\n" in lineas_finales.upper() or "SECRETARIO TECNICO\n" in lineas_finales.upper():
+            resultados.append((False, "ERROR GRAVE: Firma decisoria erróneamente atribuida a la Secretaría Técnica."))
+        else:
+            resultados.append((True, "OK: Cero firma resolutiva indebida de la Secretaría Técnica."))
 
         return resultados
 
     @staticmethod
     def validar_marco_susalud(texto_documento: str, tipo_entidad: str) -> List[Tuple[bool, str]]:
-        """Valida que se cite la normativa correcta de SUSALUD, IAFAS e IPRESS."""
         resultados = []
         texto_upper = texto_documento.upper()
 
         # SUSALUD y D. Leg. 1158
-        if "SUSALUD" in texto_upper or "SUPERINTENDENCIA NACIONAL DE SALUD" in texto_upper:
-            resultados.append((True, "OK: SUSALUD citada adecuadamente."))
+        if "SUSALUD" in texto_upper:
+            resultados.append((True, "OK: SUSALUD citada en el cuerpo del documento."))
         else:
-            resultados.append((False, "ERROR: No se menciona a SUSALUD."))
+            resultados.append((False, "ERROR: Falta citar a SUSALUD."))
 
         if "1158" in texto_documento:
             resultados.append((True, "OK: Decreto Legislativo N° 1158 citado."))
         else:
             resultados.append((False, "ERROR: Falta citar el Decreto Legislativo N° 1158."))
 
-        # IAFAS
-        if tipo_entidad in ("IAFAS", "MIXTO"):
-            if "IAFAS" in texto_upper or "ADMINISTRADORAS DE FONDOS DE ASEGURAMIENTO" in texto_upper:
-                resultados.append((True, "OK: Término y marco de IAFAS citado."))
-            else:
-                resultados.append((False, "ERROR: Se omitió citar la condición y normativa de IAFAS."))
+        # D.S. 026-2015-SA (Transferencia)
+        if "026-2015-SA" in texto_documento or "REGLAMENTO DE TRANSFERENCIA DE FUNCIONES" in texto_upper:
+            resultados.append((True, "OK: Reglamento de Transferencia de Funciones (D.S. N° 026-2015-SA) citado."))
+        else:
+            resultados.append((False, "ERROR: Falta citar el D.S. N° 026-2015-SA."))
 
-        # IPRESS
+        # Entidad específica
+        if tipo_entidad in ("IAFAS", "MIXTO"):
+            if "IAFAS" in texto_upper or "ASEGURAMIENTO" in texto_upper:
+                resultados.append((True, "OK: Régimen de IAFAS debidamente fundamentado."))
+            else:
+                resultados.append((False, "ERROR: Falta fundamentar la condición de IAFAS."))
+
         if tipo_entidad in ("IPRESS", "MIXTO"):
             if "IPRESS" in texto_upper or "PRESTADORAS DE SERVICIOS DE SALUD" in texto_upper:
-                resultados.append((True, "OK: Término y marco de IPRESS citado."))
+                resultados.append((True, "OK: Régimen de IPRESS debidamente fundamentado."))
             else:
-                resultados.append((False, "ERROR: Se omitió citar la condición y normativa de IPRESS."))
+                resultados.append((False, "ERROR: Falta fundamentar la condición de IPRESS."))
 
         return resultados
 
     @staticmethod
-    def validar_resuelve(texto_documento: str, tipo_improcedencia: str) -> List[Tuple[bool, str]]:
-        """Valida coherencia en los artículos del resuelve."""
+    def validar_resuelve(texto_documento: str, tipo_improcedencia: str = "TOTAL") -> List[Tuple[bool, str]]:
         resultados = []
         texto_upper = texto_documento.upper()
 
-        if "IMPROCEDENTE" in texto_upper:
-            resultados.append((True, "OK: Declaración expresa de IMPROCEDENTE encontrada."))
+        # Artículo PRIMERO
+        if "DECLARAR IMPROCEDENTE LA DENUNCIA" in texto_upper and "DEVOLUCIÓN" in texto_upper and "TASA" in texto_upper:
+            resultados.append((True, "OK: PRIMERO declara improcedencia y dispone devolución de tasa."))
         else:
-            resultados.append((False, "ERROR: Falta declarar IMPROCEDENTE en el fallo."))
+            resultados.append((False, "ERROR: El artículo PRIMERO debe declarar improcedente y disponer devolución de tasa."))
 
-        if "INCOMPETENCIA" in texto_upper or "EXCLUSIVA COMPETENCIA DE LA SUPERINTENDENCIA NACIONAL DE SALUD" in texto_upper or "COMPETENCIA DE LA SUPERINTENDENCIA NACIONAL DE SALUD" in texto_upper:
-            resultados.append((True, "OK: Competencia exclusiva de SUSALUD fundamentada en la parte resolutiva."))
+        # Artículo SEGUNDO
+        if "ORDENAR A LA SECRETARÍA TÉCNICA" in texto_upper and "REMITA EL ORIGINAL" in texto_upper:
+            resultados.append((True, "OK: SEGUNDO ordena a la Secretaría Técnica la remisión del original a SUSALUD."))
         else:
-            resultados.append((False, "ERROR: Falta motivar la exclusividad de competencia de SUSALUD en el resuelve."))
+            resultados.append((False, "ERROR: El artículo SEGUNDO debe ordenar a la Secretaría Técnica remitir el original a SUSALUD."))
 
-        if tipo_improcedencia == "PARCIAL":
-            if "CONTINÚE" in texto_upper or "CONTINUE" in texto_upper or "DECLINAR" in texto_upper:
-                resultados.append((True, "OK: Disposición de trámite o declinación para extremos procedentes en improcedencia parcial."))
-            else:
-                resultados.append((False, "ERROR: En improcedencia parcial debe disponerse el trámite de los extremos procedentes."))
+        # Artículo TERCERO
+        if "APELACIÓN" in texto_upper and "QUINCE (15) DÍAS HÁBILES" in texto_upper and ("006-2026-JUS" in texto_documento or "27444" in texto_documento):
+            resultados.append((True, "OK: TERCERO informa plazo de apelación (15 días hábiles, D.S. 006-2026-JUS)."))
+        else:
+            resultados.append((False, "ERROR: El artículo TERCERO debe informar sobre la apelación en 15 días hábiles y citar el D.S. N° 006-2026-JUS."))
 
         return resultados

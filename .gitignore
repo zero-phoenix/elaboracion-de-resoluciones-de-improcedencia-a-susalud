@@ -1,9 +1,8 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.docx
-!plantillas_maestras/*.docx
-*.xlsx
+build/
+*.spec
 .env
 .idea/
 .vscode/

@@ -1,29 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-from pathlib import Path
 
-BASE_DIR = Path('.').resolve()
 
 a = Analysis(
     ['scripts/improcedencia.py'],
-    pathex=[str(BASE_DIR)],
+    pathex=[],
     binaries=[],
-    datas=[
-        ('normas/*', 'normas'),
-        ('docs/*', 'docs'),
-        ('plantillas_maestras/*.docx', 'plantillas_maestras'),
-    ],
-    hiddenimports=[
-        'docx',
-        'openpyxl',
-        'src',
-        'src.builder',
-        'src.config',
-        'src.improcedencia_engine',
-        'src.rules_engine',
-        'scripts',
-        'scripts.guardia_improcedencia',
-        'scripts.verificar_improcedencia',
-    ],
+    datas=[],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
