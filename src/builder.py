@@ -1,9 +1,10 @@
 """Constructor OpenXML de alta precisión para Resoluciones de Improcedencia a SUSALUD.
 Comisión de Protección al Consumidor N° 1 (CC1) - INDECOPI.
 
-Elaborado por: David Chávez
-Supervisado por: Loussiana Salazar
-Equipo: Seguros
+Filosofía: NUNCA generar un .docx desde la nada. Se clona la plantilla maestra institucional
+preservando encabezados, pies de página, numeración y membrete oficial del Indecopi;
+se limpia el cuerpo del documento y se inyecta la resolución con micro-tipografía
+calibrada y formateo determinista.
 """
 from __future__ import annotations
 
@@ -19,12 +20,19 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 
 from src.config import (
+    AUTORIDAD_RESOLUTIVA,
+    FIRMA_RESOLUTIVA,
     FUENTE_PRINCIPAL,
     PLANTILLAS_DIR,
-    TAMANO_METADATA_PT,
+    GENERADOS_DIR,
     TAMANO_TEXTO_PT,
     TAMANO_TITULO_PT,
 )
+
+INDENT_ORDINAL_LEFT = Inches(0.39)
+INDENT_ORDINAL_HANG = Inches(-0.39)
+INDENT_INCISOS_LEFT = Inches(0.79)
+INDENT_INCISOS_HANG = Inches(-0.39)
 
 
 def forzar_formato_parrafo(parrafo) -> None:
@@ -42,19 +50,18 @@ def add_run(
     bold: bool = False,
     size=Pt(TAMANO_TEXTO_PT),
     superscript: bool = False,
-    font_name: str = FUENTE_PRINCIPAL,
 ) -> Any:
-    """Añade un run garantizando la fuente en todos los slots OpenXML."""
+    """Añade un run con Arial Narrow garantizado en todos los slots OpenXML."""
     run = parrafo.add_run(texto)
-    run.font.name = font_name
+    run.font.name = FUENTE_PRINCIPAL
     rPr = run._element.get_or_add_rPr()
     rFonts = rPr.find(qn("w:rFonts"))
     if rFonts is None:
         rFonts = OxmlElement("w:rFonts")
         rPr.insert(0, rFonts)
-    rFonts.set(qn("w:ascii"), font_name)
-    rFonts.set(qn("w:hAnsi"), font_name)
-    rFonts.set(qn("w:cs"), font_name)
+    rFonts.set(qn("w:ascii"), FUENTE_PRINCIPAL)
+    rFonts.set(qn("w:hAnsi"), FUENTE_PRINCIPAL)
+    rFonts.set(qn("w:cs"), FUENTE_PRINCIPAL)
     run.font.size = size
     run.bold = bold
 
@@ -72,7 +79,6 @@ def add_texto_con_superindices(
     *,
     bold: bool = False,
     size=Pt(TAMANO_TEXTO_PT),
-    font_name: str = FUENTE_PRINCIPAL,
 ) -> None:
     """Detecta 'N°' o números ordinales como 1° y formatea la volada en superíndice."""
     partes = re.split(r"(N°|N\s*°|\b\d+°)", texto)
@@ -80,14 +86,14 @@ def add_texto_con_superindices(
         if not p:
             continue
         if p.startswith("N") and "°" in p:
-            add_run(parrafo, "N", bold=bold, size=size, font_name=font_name)
-            add_run(parrafo, "°", bold=bold, size=size, superscript=True, font_name=font_name)
+            add_run(parrafo, "N", bold=bold, size=size)
+            add_run(parrafo, "°", bold=bold, size=size, superscript=True)
         elif re.match(r"^\d+°$", p):
             num = p[:-1]
-            add_run(parrafo, num, bold=bold, size=size, font_name=font_name)
-            add_run(parrafo, "°", bold=bold, size=size, superscript=True, font_name=font_name)
+            add_run(parrafo, num, bold=bold, size=size)
+            add_run(parrafo, "°", bold=bold, size=size, superscript=True)
         else:
-            add_run(parrafo, p, bold=bold, size=size, font_name=font_name)
+            add_run(parrafo, p, bold=bold, size=size)
 
 
 def nuevo_parrafo(
@@ -110,135 +116,106 @@ def nuevo_parrafo(
     return p
 
 
-def construir_resolucion_desde_dossier(
-    dossier: Dict[str, Any],
+def construir_resolucion_improcedencia(
+    datos: Dict[str, Any],
     ruta_salida: Path,
     ruta_plantilla: Path | None = None,
 ) -> Path:
-    """Clona la plantilla maestra institucional y vuelca el dossier con fidelidad tipográfica."""
+    """Construye una resolución de improcedencia para SUSALUD (IPRESS / IAFAS)."""
     if ruta_plantilla is None:
         plantillas = list(PLANTILLAS_DIR.glob("*.docx"))
         if not plantillas:
             raise FileNotFoundError(f"No se encontró ninguna plantilla base en {PLANTILLAS_DIR}")
         ruta_plantilla = plantillas[0]
 
+    # Copia inicial
     ruta_salida.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ruta_plantilla, ruta_salida)
 
     doc = Document(str(ruta_salida))
 
-    # 1. Actualizar el Expediente en el encabezado oficial
-    exp_num = dossier["metadatos"]["expediente"]
-    for s in doc.sections:
-        if len(s.header.paragraphs) > 2:
-            p_hdr = s.header.paragraphs[2]
-            p_hdr.text = f"\tEXPEDIENTE  {exp_num}"
-            for r in p_hdr.runs:
-                r.font.name = FUENTE_PRINCIPAL
-                r.font.size = Pt(8.5)
-
-    # 2. Limpiar el cuerpo del documento preservando sección/encabezados/pies
+    # Limpiar cuerpo manteniendo encabezados/pies
     for p in list(doc.paragraphs):
         p._element.getparent().remove(p._element)
 
-    m = dossier["metadatos"]
+    # 1. ENCABEZADO INSTITUCIONAL
+    p_aut = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.CENTER)
+    add_run(p_aut, AUTORIDAD_RESOLUTIVA, bold=True)
 
-    # --- PÁRRAFOS DE CONTROL INTERNO (8 pt) ---
-    p_elab = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
-    add_run(p_elab, f"Elaborado por: {m['elaborado_por']}", size=Pt(TAMANO_METADATA_PT))
-
-    p_sup = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
-    add_run(p_sup, f"Supervisado por: {m['supervisado_por']}", size=Pt(TAMANO_METADATA_PT))
-
-    p_eq = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
-    add_run(p_eq, f"Equipo: {m['equipo']}", size=Pt(TAMANO_METADATA_PT))
-
-    p_venc = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
-    add_run(p_venc, f"Vencimiento: {m['vencimiento']}", size=Pt(TAMANO_METADATA_PT))
+    p_num = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.CENTER)
+    num_res = datos.get("numero_resolucion", "RESOLUCIÓN N° 0001-2026/CC1")
+    add_texto_con_superindices(p_num, num_res, bold=True)
 
     nuevo_parrafo(doc)
 
-    # --- TÍTULO DE LA RESOLUCIÓN (16 pt Bold) ---
-    p_tit = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.CENTER)
-    add_texto_con_superindices(p_tit, m["numero_resolucion"], bold=True, size=Pt(TAMANO_TITULO_PT))
+    # 2. CUADRO DE IDENTIFICACIÓN
+    p_exp = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
+    add_run(p_exp, "EXPEDIENTE\t: ", bold=True)
+    add_run(p_exp, datos.get("expediente", ""))
 
-    nuevo_parrafo(doc)
-
-    # --- CUADRO DE IDENTIFICACIÓN ---
     p_den = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-    add_run(p_den, "DENUNCIANTE\t:\t", bold=True)
-    add_run(p_den, m["denunciante_linea"])
+    add_run(p_den, "DENUNCIANTE\t: ", bold=True)
+    add_run(p_den, datos.get("denunciante", ""))
 
     p_denun = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-    add_run(p_denun, "DENUNCIADO\t:\t", bold=True)
-    add_run(p_denun, m["denunciado_linea"])
+    add_run(p_denun, "DENUNCIADO(S)\t: ", bold=True)
+    add_run(p_denun, datos.get("denunciado", ""))
 
     p_mat = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-    add_run(p_mat, "MATERIA\t:\t", bold=True)
-    add_run(p_mat, m["materia_lineas"][0])
-    for l_extra in m["materia_lineas"][1:]:
-        p_extra = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-        add_run(p_extra, f"\t\t{l_extra}")
+    add_run(p_mat, "MATERIA\t\t: ", bold=True)
+    add_run(p_mat, "INCOMPETENCIA POR RAZÓN DE LA MATERIA / SUSALUD")
 
-    p_act = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-    add_run(p_act, "ACTIVIDAD\t:\t", bold=True)
-    add_run(p_act, m["actividad"])
+    p_proc = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
+    add_run(p_proc, "PROCEDENCIA\t: ", bold=True)
+    add_run(p_proc, "COMISIÓN DE PROTECCIÓN AL CONSUMIDOR N° 1")
 
     nuevo_parrafo(doc)
 
-    # --- FECHA ---
-    p_fec = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
-    add_run(p_fec, f"Lima, {m['fecha_emision']}")
+    # 3. FECHA
+    p_fecha = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
+    add_run(p_fecha, f"Lima, {datos.get('fecha_emision', '25 de septiembre de 2026')}.")
 
     nuevo_parrafo(doc)
 
-    # --- ANTECEDENTES ---
-    p_ant_tit = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
-    add_run(p_ant_tit, "ANTECEDENTES", bold=True)
+    # 4. VISTOS
+    p_vistos_tit = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
+    add_run(p_vistos_tit, "VISTOS:", bold=True)
 
-    for texto in dossier["parrafos_antecedentes"]:
-        p_ant = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-        add_texto_con_superindices(p_ant, texto)
+    for visto in datos.get("vistos", []):
+        p_v = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
+        add_texto_con_superindices(p_v, visto)
+
+    nuevo_parrafo(doc)
+
+    # 5. CONSIDERANDO
+    p_cons_tit = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
+    add_run(p_cons_tit, "CONSIDERANDO:", bold=True)
+
+    for seccion in datos.get("secciones_considerando", []):
+        p_sub = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
+        add_texto_con_superindices(p_sub, seccion.get("titulo", ""), bold=True)
+        for parrafo_texto in seccion.get("parrafos", []):
+            p_c = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
+            add_texto_con_superindices(p_c, parrafo_texto)
         nuevo_parrafo(doc)
 
-    # --- ANÁLISIS ---
-    p_an_tit = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
-    add_run(p_an_tit, "ANÁLISIS", bold=True)
+    # 6. RESUELVE
+    p_resuelve_tit = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.CENTER)
+    add_run(p_resuelve_tit, "RESUELVE:", bold=True)
 
-    p_an_sub = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
-    add_run(p_an_sub, dossier["subtitulo_analisis"], bold=True)
-
-    for texto in dossier["parrafos_analisis"]:
-        p_an = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-        add_texto_con_superindices(p_an, texto)
-        nuevo_parrafo(doc)
-
-    # Subsección (i)
-    p_sub1_tit = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
-    add_run(p_sub1_tit, dossier["tit_sub1"], bold=True)
-
-    for texto in dossier["parrafos_sub1"]:
-        p_s1 = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-        add_texto_con_superindices(p_s1, texto)
-        nuevo_parrafo(doc)
-
-    # Subsección (ii)
-    p_sub2_tit = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
-    add_run(p_sub2_tit, dossier["tit_sub2"], bold=True)
-
-    for texto in dossier["parrafos_sub2"]:
-        p_s2 = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
-        add_texto_con_superindices(p_s2, texto)
-        nuevo_parrafo(doc)
-
-    # --- RESUELVE ---
-    p_res_tit = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.LEFT)
-    add_run(p_res_tit, "RESUELVE", bold=True)
-
-    for articulo in dossier["articulos_resuelve"]:
+    for articulo in datos.get("articulos_resuelve", []):
         p_art = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
         add_texto_con_superindices(p_art, articulo)
         nuevo_parrafo(doc)
+
+    # 7. INTERVENCIÓN DE LA COMISIÓN (ÓRGANO COLEGIADO)
+    p_interv = nuevo_parrafo(doc, WD_ALIGN_PARAGRAPH.JUSTIFY)
+    add_run(
+        p_interv,
+        "Con la intervención de los señores comisionados: ",
+        bold=False,
+    )
+    add_run(p_interv, datos.get("comisionados_texto", "miembros integrantes de la Comisión de Protección al Consumidor N° 1."))
 
     doc.save(str(ruta_salida))
     return ruta_salida

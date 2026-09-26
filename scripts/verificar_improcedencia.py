@@ -92,13 +92,9 @@ def ejecutar_verificacion_popperiana(
                     fuentes_no_arial.add(val)
 
         if fuentes_no_arial:
-            fuentes_invalidas = [f for f in fuentes_no_arial if f not in ("Arial", "Arial Narrow")]
-            if fuentes_invalidas:
-                print(f"  ⚠️ Advertencia tipográfica: Se detectaron fuentes no estándar: {fuentes_invalidas}")
-            else:
-                print("  ✅ OK: Tipografía Arial / Arial Narrow verificada en slots OpenXML.")
+            print(f"  ⚠️ Advertencia tipográfica: Se detectaron fuentes no estándar: {fuentes_no_arial}")
         else:
-            print("  ✅ OK: Tipografía oficial verificada en slots OpenXML.")
+            print("  ✅ OK: Tipografía Arial Narrow verificada en slots OpenXML.")
 
     print("\n--------------------------------------------------")
     if fallos:
