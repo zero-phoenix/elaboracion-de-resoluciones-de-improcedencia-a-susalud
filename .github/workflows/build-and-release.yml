@@ -1,0 +1,83 @@
+name: Build and Release Engine
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build Executable & Create Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pymupdf pillow
+
+      - name: Build Executable with PyInstaller
+        run: |
+          pyinstaller --noconfirm --clean `
+            --name "improcedencia-susalud-engine" `
+            --onefile `
+            --console `
+            --add-data "plantillas_maestras;plantillas_maestras" `
+            scripts/improcedencia.py
+
+      - name: Create Distribution Package
+        run: |
+          New-Item -ItemType Directory -Force -Path package/improcedencia-susalud
+          Copy-Item dist/improcedencia-susalud-engine.exe package/improcedencia-susalud/
+          Copy-Item -Recurse plantillas_maestras package/improcedencia-susalud/
+          Copy-Item README.md package/improcedencia-susalud/
+          Compress-Archive -Path package/improcedencia-susalud/* -DestinationPath dist/improcedencia-susalud-windows-x64.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            dist/improcedencia-susalud-engine.exe
+            dist/improcedencia-susalud-windows-x64.zip
+          name: Release ${{ github.ref_name }} - Motor de Resoluciones de Improcedencia a SUSALUD
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## ⚖️ Motor Automatizado de Resoluciones de Improcedencia a SUSALUD (CC1 - Indecopi)
+            **Versión Oficial:** `${{ github.ref_name }}`
+
+            ### 📌 Alcance Jurídico e Institucional
+            Este sistema automatiza la calificación, subsunción normativa y redacción determinista de las **Resoluciones Finales de Improcedencia por Incompetencia Material a favor de SUSALUD** emitidas por la **Comisión de Protección al Consumidor N° 1 (CC1)** del Indecopi.
+
+            ### 🏥 Supuestos Normativos Soportados
+            1. **IAFAS (Aseguradoras / EPS / AFOCAT / SOAT):** Cobertura no oportuna o negativa de cobertura (D. Leg. 1158, art. 6; D.S. 026-2015-SA; D.S. 031-2014-SA, Anexo I-C).
+            2. **IPRESS (Clínicas / Hospitales / Centros de Salud):** Cobros no presupuestados, retención de historia clínica, deficiencias asistenciales (D. Leg. 1158, art. 7; Ley 26842; D.S. 031-2014-SA, Anexo I-B).
+            3. **Mixto Concurrente (IAFAS + IPRESS):** Cobertura de aseguramiento y prestación médica conjunta.
+            4. **Falta de Relación de Consumo (Laboral / Empleador):** Improcedencia donde concurre empleador y SUSALUD (no procede devolución de tasa por calificación sustantiva).
+            5. **Declinación por Cuantía (< 3 UIT) a OPS 1:** Subsidios e incapacidades temporales SOAT.
+
+            ### 🔬 Garantías de Calidad Popperiana
+            - **Preservación Total OpenXML:** 100% de conservación de las 20 a 24 notas al pie legales en `word/footnotes.xml`.
+            - **Calibración Tipográfica:** Negrita reservada exclusivamente para los encabezados ordinales (`PRIMERO:`, `SEGUNDO:`, `TERCERO:`), manteniendo el texto dispositivo en Arial 10 regular.
+            - **Devolución de Tasa de Trámite:** Aplicación estricta del Art. 13.1 de la Directiva N° 001-2021-COD-INDECOPI.
+            - **Firmas Auténticas:** Emisión y firma exclusiva por el Colegiado de la Comisión (CC1) y Presidenta.
+
+            ### 📦 Activos Descargables
+            * `improcedencia-susalud-engine.exe`: Ejecutable portable para Windows x64.
+            * `improcedencia-susalud-windows-x64.zip`: Paquete completo con plantillas maestras y documentación.

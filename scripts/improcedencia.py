@@ -48,16 +48,20 @@ def cmd_construir_muestra(args):
     ruta_salida = GENERADOS_DIR / "RESOLUCION_0150-2026_CC1_IMPROCEDENCIA_SUSALUD.docx"
 
     print(f"Generando resolución de muestra en: {ruta_salida}")
-    # Si no hay plantilla en plantillas_maestras, buscar si existe alguna en el workspace
+    # Priorizar la plantilla maestra limpia de 9 páginas verificada popperianamente
     plantilla = None
-    plantillas_locales = list(PLANTILLAS_DIR.glob("*.docx"))
-    if plantillas_locales:
-        plantilla = plantillas_locales[0]
+    plantilla_limpia = PLANTILLAS_DIR / "plantilla_maestra_clean_9paginas.docx"
+    if plantilla_limpia.exists():
+        plantilla = plantilla_limpia
     else:
-        # Buscar en repo anterior
-        otras = list(Path("c:/Users/Admin/Documents/antigravity/zealous-kepler").glob("**/*.docx"))
-        if otras:
-            plantilla = otras[0]
+        plantillas_locales = list(PLANTILLAS_DIR.glob("*.docx"))
+        if plantillas_locales:
+            plantilla = plantillas_locales[0]
+        else:
+            # Buscar en repo anterior
+            otras = list(Path("c:/Users/Admin/Documents/antigravity/zealous-kepler").glob("**/*.docx"))
+            if otras:
+                plantilla = otras[0]
 
     construir_resolucion_improcedencia(dossier, ruta_salida, plantilla)
     print(f"✅ Documento generado exitosamente.")
